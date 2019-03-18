@@ -1,0 +1,35 @@
+path = 'D:\\java_os\\java_os.nl'
+target = path.replace('java_os.nl', 'r_java_os.nl')
+
+def getIDfromCount(dict_, num):
+    target = dict()
+    for k, v in dict_.items():
+        if int(v) < num:
+            target[k] = v
+    return target
+
+def main_():
+    result_dict = dict()
+    with open(path, 'r') as a, open(target, 'w', newline='') as b:
+        result = []
+        for line in a.readlines():
+            temp = line.strip().split('\t')
+            id = temp[0]
+            sentence = temp[1]
+            sentence = sentence.replace(',', ' ').replace('?', ' ').replace(';', ' ') \
+                .replace('/', ' ').replace(':', ' ').replace('\t', ' ')
+            sentence = sentence.rstrip()
+            words = sentence.split(' ')
+            num = len(words)
+            result.append(id + '\t'+ str(num) + '\n')
+            result_dict[id] = num
+        for i in result:
+            b.write(i)
+    return result_dict
+
+result = main_()
+result_v = result.values()
+avg = sum(result_v) / len(result_v)
+_os = getIDfromCount(result, 50)
+print(len(_os))
+print(avg)
