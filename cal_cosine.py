@@ -1,6 +1,6 @@
 import re
 import numpy as np
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction, corpus_bleu
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -33,7 +33,7 @@ def count(resfile_1, resfile_2):
     with open(resfile_1, 'r') as res_1, open(resfile_2, 'r') as res_2:
         for i, line in enumerate(res_1.readlines()):
             # 接下来对每一行进行操作
-            line = line.rstrip().rstrip('\n')  # 去头尾空白以及换行符
+            line = line.strip().strip('\n')  # 去头尾空白以及换行符
             line_id = line.split('\t')[0]
             line_sentence = line.split('\t')[1]
             line_sentence = re.split(r'[\-\\_ .;<>()"\n+/?:&=,]', line_sentence)  # 按特殊符号分隔
@@ -48,7 +48,7 @@ def count(resfile_1, resfile_2):
             res1_dict[i] = (line_id, num_)
         for i, line in enumerate(res_2.readlines()):
             # 接下来对每一行进行操作
-            line = line.rstrip().rstrip('\n')  # 去头尾空白以及换行符
+            line = line.strip().strip('\n')  # 去头尾空白以及换行符
             line_id = line.split('\t')[0]
             line_sentence = line.split('\t')[1]
             line_sentence = re.split(r'[\-\\_ .;<>()"\n+/?:&=,]', line_sentence)  # 按特殊符号分隔
@@ -88,11 +88,10 @@ def count(resfile_1, resfile_2):
 #             result_dict[line_id] = line_dict
 #     return result_dict
 
-train_file = ['../cosine/train.token.nl', '../cosine/train.token.API', '../cosine/1.txt']  # 157
-test_file = ['../cosine/test.token.nl', '../cosine/test.token.API', '../cosine/2.txt']  # 243
-target_file = '../cosine/target_cosine.API'
 # 按cosine 值top5计算
 def main():
+    train_file = ['../cosine/train.token.nl', '../cosine/train.token.API', '../cosine/1.txt']  # 157
+    test_file = ['../cosine/test.token.nl', '../cosine/test.token.API', '../cosine/2.txt']  # 243
     file, id_file_train, id_file_test = count(train_file[0], test_file[0])
 
     Tf = TfidfVectorizer(use_idf=True)
@@ -130,19 +129,76 @@ def main():
        for i in result_:
            b.write(i+'\n')
 
+def main_nl_code():
+    # train_file = ['../cosine/tu_only/java/training_token.nl', '../cosine/tu_only/java/training_token.code', '../cosine/tu_only/java/training_token.api']
+    train_file = ['../cosine/tu_only_so/java/java_trainvalid.nl', '../cosine/tu_only_so/java/java_trainvalid.code', '../cosine/tu_only_so/java/java_trainvalid.api']
+    test_file = ['../cosine/tu_only_so/java/testing_token.nl', '../cosine/tu_only_so/java/testing_token.code', '../cosine/tu_only_so/java/testing_token.api']
+    file_nl, id_train_nl, id_test_nl = count(train_file[0], test_file[0])
+    file_code, id_train_code, id_test_code = count(train_file[1], test_file[1])
+
+    Tf_nl = TfidfVectorizer(use_idf=True)
+    Tf_nl.fit(file_nl)
+    corpus_array_nl = Tf_nl.transform(file_nl).toarray()
+    Tf_code = TfidfVectorizer(use_idf=True)
+    Tf_code.fit(file_code)
+    corpus_array_code = Tf_nl.transform(file_code).toarray()
+
+    result_dict = {}
+    for i in range(len(id_train_nl)-1, len(file_nl)-1):
+        # 针对每一个test
+        tmp_i = np.array([corpus_array_nl[i]])
+        tmp_i_code = np.array([corpus_array_code[i]])
+        temp_dict = {}
+        for j in range(len(id_train_nl)):
+            tmp_j = np.array([corpus_array_nl[j]])
+            tmp_j_code = np.array([corpus_array_code[j]])
+            cosinValue_nl = cosine_similarity(tmp_i, tmp_j)
+            cosinValue_code = cosine_similarity(tmp_i_code, tmp_j_code)
+            cosinValue = (cosinValue_nl[0][0] + cosinValue_code[0][0]) / 2
+            temp_dict[id_train_nl.get(j)[0]] = (cosinValue, id_train_nl.get(j)[1]) # {id: (cos, train_text)}
+        temp_dict = sorted(temp_dict.items(), key=lambda x:x[1][0], reverse=True)  # 157项
+        print(str(i))
+        # a =id_file_test.get(i-len(id_file_train)+1)[1]
+        result_dict[id_test_nl.get(i-len(id_train_nl)+1)[0]] = (temp_dict, id_test_nl.get(i-len(id_train_nl)+1)[1])  # {test_id: (dict, test_text)}
+
+    # 计算bleu
+    result_ = []
+    for key, value in result_dict.items():  # 0-243
+        #  test_train_score = []
+        test_sentence = value[1]
+        best_socre, best_id = 0, 0
+        for i in range(5):
+            train_sentence = value[0][i][1][1]
+            chencherry = SmoothingFunction()
+            # weights = (1. / 1.,)
+            BLEUscore = sentence_bleu([train_sentence], test_sentence, smoothing_function=chencherry.method1)
+            if best_socre <= BLEUscore:
+                best_socre = BLEUscore
+                best_id = value[0][i][0]
+        result_.append(str(key) + '\t' + str(best_id) + '\t' + str(best_socre))
+    with open('../cosine/tu_only_so/java/score_nl_code_bleu4.txt', 'w', newline='') as b:
+        for i in result_:
+            b.write(i + '\n')
+
 # 生成api文件
 def getAPIfromTXT():
-    with open(train_file[1], 'r') as a, open('D:\\test_train_cosine.txt', 'r') as b, open(target_file, 'w', newline='') as c:
+    # train_file = ['../cosine/tu_only/java/training_token.nl', '../cosine/tu_only/java/training_token.code',
+    #              '../cosine/tu_only/java/training_token.api']
+    train_file = ['../cosine/tu_only_so/java/java_trainvalid.nl', '../cosine/tu_only_so/java/java_trainvalid.code',
+                  '../cosine/tu_only_so/java/java_trainvalid.api']
+    # train_file = ['../cosine/train.token.nl', '../cosine/train.token.API', '../cosine/1.txt']  # 157
+    target_file = '../cosine/tu_only_so/java/target_cosine_nl_code.API'
+    with open(train_file[2], 'r') as a, open('../cosine/tu_only_so/java/score_nl_code.txt', 'r') as b, open(target_file, 'w', newline='') as c:
         a_dict = {}
         api_id = []
         result_ = []
         for line in a.readlines():
-            line = line.rstrip().rstrip('\n')  # 去头尾空白以及换行符
+            line = line.strip().strip('\n')  # 去头尾空白以及换行符
             line_id = line.split('\t')[0]
             line_sentence = line.split('\t')[1]
             a_dict[line_id] = line_sentence
         for line in b.readlines():
-            line = line.rstrip().rstrip('\n')  # 去头尾空白以及换行符
+            line = line.strip().strip('\n')  # 去头尾空白以及换行符
             line_id = line.split('\t')[1]
             api_id.append(line_id)
         for i in api_id:
@@ -156,6 +212,8 @@ def getAPIfromTXT():
 
 # 按cosine值 top1 计算
 def main_cosine():
+    train_file = ['../cosine/train.token.nl', '../cosine/train.token.API', '../cosine/1.txt']  # 157
+    test_file = ['../cosine/test.token.nl', '../cosine/test.token.API', '../cosine/2.txt']  # 243
     file, id_file_train, id_file_test = count(train_file[0], test_file[0])
 
     Tf = TfidfVectorizer(use_idf=True)
@@ -182,5 +240,6 @@ def main_cosine():
 
 if __name__ == '__main__':
     # main()
-    getAPIfromTXT()
+    # getAPIfromTXT()
     # main_cosine()
+    main_nl_code()
