@@ -63,6 +63,19 @@ def count(resfile_1, resfile_2):
             res2_dict[i] = (line_id, num_)
     return file_list, res1_dict, res2_dict
 
+def count_api_nl(api, nl):
+    file_list = []
+    nl_dict, api_dict = {}, {}
+    with open(api, 'r') as a, open(nl, 'r') as b:
+        for i, line_a in enumerate(a.readlines()):
+            line_a = line_a.strip().replace('\n', '')
+            api_dict[i] = line_a
+            file_list.append(line_a)
+        for j, line_b in enumerate(b.readlines()):
+            nl_dict[j] = line_b
+            file_list.append(line_b)
+    return file_list, api_dict, nl_dict
+
 
 # 统计每一行出现的关键词和词频
 # return: {id_1: {word_1: num}, id_2: {word_2: num}}
@@ -187,7 +200,7 @@ def getAPIfromTXT():
     train_file = ['../cosine/tu_only_so/java/java_trainvalid.nl', '../cosine/tu_only_so/java/java_trainvalid.code',
                   '../cosine/tu_only_so/java/java_trainvalid.api']
     # train_file = ['../cosine/train.token.nl', '../cosine/train.token.API', '../cosine/1.txt']  # 157
-    target_file = '../cosine/tu_only_so/java/target_cosine_nl_code.API'
+    target_file = '../cosine/tu_only_so/java/tuonly_nl_code_bleu4.API'
     with open(train_file[2], 'r') as a, open('../cosine/tu_only_so/java/score_nl_code.txt', 'r') as b, open(target_file, 'w', newline='') as c:
         a_dict = {}
         api_id = []
@@ -238,8 +251,80 @@ def main_cosine():
        for i in result_:
            b.write(i+'\n')
 
+def consine_sentence_api_top5(api, nl, target):
+    file, api_dict, nl_dict = count_api_nl(api, nl)
+
+    Tf = TfidfVectorizer(use_idf=True)
+    Tf.fit(file)
+    corpus_array = Tf.transform(file).toarray()
+
+    result = []
+    for i in range(len(api_dict), len(file)):
+        # 针对每一个test
+        tmp_i = np.array([corpus_array[i]])
+        tmp_dict = {}
+        for j in range(len(api_dict)):
+            tmp_j = np.array([corpus_array[j]])
+            cosine_value = cosine_similarity(tmp_i, tmp_j)
+            tmp_dict[j] = (cosine_value[0][0], api_dict.get(j))  # {id: (cos, api)}
+        tmp_dict = sorted(tmp_dict.items(), key=lambda x: x[1][0], reverse=True)  # 36项
+        #result.append(str(i - len(api_dict) + 1)+ '\t' +
+        #              str(tmp_dict[0][1][0]) + ' ' +str(tmp_dict[0][1][1]) + ' ' +
+        #              str(tmp_dict[1][1][0]) + ' ' + str(tmp_dict[1][1][1]) + ' ' +
+        #              str(tmp_dict[2][1][0])+ ' ' + str(tmp_dict[2][1][1])+ ' ' +
+        #             str(tmp_dict[3][1][0])+ ' ' + str(tmp_dict[3][1][1])+ ' ' +
+        #              str(tmp_dict[4][1][0])+ ' ' + str(tmp_dict[4][1][1]))
+        result.append(str(tmp_dict[0][1][1]) + ' ' +
+                      str(tmp_dict[1][1][1]) + ' ' +
+                      str(tmp_dict[2][1][1]) + ' ' +
+                      str(tmp_dict[3][1][1]) + ' ' +
+                      str(tmp_dict[4][1][1]))
+    with open(target, 'w', newline='')as t:
+        for m in result:
+            t.write(m + '\n')
+
+def bleu_moses(api, nl, target):
+    file, api_dict, nl_dict = count_api_nl(api, nl)
+
+    Tf = TfidfVectorizer(use_idf=True)
+    Tf.fit(file)
+    corpus_array = Tf.transform(file).toarray()
+
+    result = {}
+    for i in range(len(api_dict), len(file)):
+        # 针对每一个test
+        tmp_i = np.array([corpus_array[i]])
+        tmp_dict = {}
+        for j in range(len(api_dict)):
+            tmp_j = np.array([corpus_array[j]])
+            cosine_value = cosine_similarity(tmp_i, tmp_j)
+            tmp_dict[j] = (cosine_value[0][0], api_dict.get(j))  # {id: (cos, api)}
+        tmp_dict = sorted(tmp_dict.items(), key=lambda x: x[1][0], reverse=True)  # 36项
+        result[i - len(api_dict)] = (tmp_dict, nl_dict.get(i - len(api_dict)))  # {nl_id: (tmp_dict, nl)}
+    # 计算bleu
+    result_ = []
+    for key, value in result.items():
+        #  test_train_score = []
+        test_sentence = value[1]
+        best_socre, best_id = 0, 0
+        for i in range(5):
+            train_sentence = value[0][i][1][1]
+            chencherry = SmoothingFunction()
+            # weights = (1. / 1.,)
+            BLEUscore = sentence_bleu([train_sentence], test_sentence, smoothing_function=chencherry.method1)
+            if best_socre <= BLEUscore:
+                best_socre = BLEUscore
+                best_id = value[0][i][0]
+        result_.append(str(key) + '\t' + str(best_id) + '\t' + str(best_socre))
+    with open(target, 'w', newline='') as b:
+        for i in result_:
+            b.write(i + '\n')
+
+
 if __name__ == '__main__':
     # main()
     # getAPIfromTXT()
     # main_cosine()
-    main_nl_code()
+    # main_nl_code()
+    # consine_sentence_api_top5('../cosine/f_5api/testting.api', '../cosine/f_5api/testing.nl', '../cosine/f_5api/testing_top5.api')
+    bleu_moses('../cosine/moses/test.api', '../cosine/moses/test.nl', '../cosine/moses/bleu_1.text')
